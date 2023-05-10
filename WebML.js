@@ -36,11 +36,15 @@ var WebML = function(opts){
         self.RF = this.gl.R32F;
         self.FLOAT = this.gl.FLOAT;
     }
+	this.MaxValueSize = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE);
 	this.Lerp = function(a,b,t) {
 		return ((1-t)*a)+(t*b);
 	}
     function createProgram(fsScorce) {
         var fs = self.gl.createShader(self.gl.FRAGMENT_SHADER);
+		if (self.Float16) {
+			fsScorce = fsScorce.replaceAll("highp","mediump");
+		}
         self.gl.shaderSource(fs,fsScorce);
         self.gl.compileShader(fs);
         var program = self.gl.createProgram();
@@ -173,6 +177,7 @@ var WebML = function(opts){
             return data;
         }
 	}
+	this.AllValues = [];
     this.Value = function(size,Texture) {
         this.size = size;
         if (Texture) {
@@ -237,6 +242,7 @@ var WebML = function(opts){
 				self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.RGBAF, this.size[0], this.size[1], 0, self.gl.RGBA, self.FLOAT, null);
 			}
         }
+		self.AllValues.push(this);
 		this.set = function(data,channels) {
 			if (data.constructor == Float32Array) {
 				var loop = this.size[0]*this.size[1];
@@ -375,10 +381,35 @@ var WebML = function(opts){
 			self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.RGBAF, this.size[0], this.size[1], 0, self.gl.RGBA, self.FLOAT, null);
 		}
         this.delete = function() {
+			var idx = self.AllValues.indexOf(this);
+			if (idx !== -1) {
+				self.AllValues.splice(idx,1);
+			}
             self.gl.deleteTexture(this.Texture);
             delete this;
         }
     }
+	this.GetGPUMemoryUsage = function() {
+		var result = 0;
+		for (var i=0; i<self.AllValues.length; i++) {
+			if (!self.AllValues[i]) {
+				self.AllValues.splice(i,1);
+				i--;
+			} else {
+				if (self.AllValues[i].size[2] === 1) {
+					result += self.AllValues[i].size[0]*self.AllValues[i].size[1];
+				} else {
+					result += self.AllValues[i].size[0]*self.AllValues[i].size[1]*4;
+				}
+			}
+		}
+		if (self.Float16) {
+			result *= 2;
+		} else {
+			result *= 4;
+		}
+		return {bytes:result,kilobytes:result*0.0009765625,megabytes:result*0.00000095367431640625,gigabytes:result*0.000000000931322574615478515625};
+	}
 	this.State = function(inArr) {
 		var arr = [];
 		for (var i=0; i<inArr.length; i++) {
@@ -1355,19 +1386,19 @@ var WebML = function(opts){
 				if (uVertical) {
 					highp float d = float(textureSize(uInput,0)[0]);
 					if (xy.y%2 == 1) {
-						Activation = texelFetch(uInput,xy,0)+cos((float(xy.x))*Pi*pow(10000.0,-float(xy.y>>1)/d));
+						Activation = texelFetch(uInput,xy,0)+cos((float(xy.x))*Pi*pow(65536.0,-float(xy.y>>1)/d));
 						// Activation = texelFetch(uInput,xy,0)+vec4(cos((uTime+float(xy.x))*Pi));
 					} else {
-						Activation = texelFetch(uInput,xy,0)+sin((float(xy.x))*Pi*pow(10000.0,-float(xy.y>>1)/d));
+						Activation = texelFetch(uInput,xy,0)+sin((float(xy.x))*Pi*pow(65536.0,-float(xy.y>>1)/d));
 						// Activation = texelFetch(uInput,xy,0)+vec4(sin((uTime+float(xy.x))*Pi));
 					}
 				} else {
 					highp float d = float(textureSize(uInput,0)[1]);
 					if (xy.x%2 == 1) {
-						Activation = texelFetch(uInput,xy,0)+cos((float(xy.y))*Pi*pow(10000.0,-float(xy.x>>1)/d));
+						Activation = texelFetch(uInput,xy,0)+cos((float(xy.y))*Pi*pow(65536.0,-float(xy.x>>1)/d));
 						// Activation = texelFetch(uInput,xy,0)+vec4(cos((uTime+float(xy.y))*Pi));
 					} else {
-						Activation = texelFetch(uInput,xy,0)+sin((float(xy.y))*Pi*pow(10000.0,-float(xy.x>>1)/d));
+						Activation = texelFetch(uInput,xy,0)+sin((float(xy.y))*Pi*pow(65536.0,-float(xy.x>>1)/d));
 						// Activation = texelFetch(uInput,xy,0)+vec4(sin((uTime+float(xy.y))*Pi));
 					}
 				}
@@ -1504,19 +1535,19 @@ var WebML = function(opts){
 				if (uVertical) {
 					highp float d = float(textureSize(uInput,0)[0]);
 					if (xy.y%2 == 1) {
-						Activation = texelFetch(uInput,xy,0)+cos((uTime+float(xy.x))*Pi*pow(10000.0,-float(xy.y>>1)/d));
+						Activation = texelFetch(uInput,xy,0)+cos((uTime+float(xy.x))*Pi*pow(65536.0,-float(xy.y>>1)/d));
 						// Activation = texelFetch(uInput,xy,0)+vec4(cos((uTime+float(xy.x))*Pi));
 					} else {
-						Activation = texelFetch(uInput,xy,0)+sin((uTime+float(xy.x))*Pi*pow(10000.0,-float(xy.y>>1)/d));
+						Activation = texelFetch(uInput,xy,0)+sin((uTime+float(xy.x))*Pi*pow(65536.0,-float(xy.y>>1)/d));
 						// Activation = texelFetch(uInput,xy,0)+vec4(sin((uTime+float(xy.x))*Pi));
 					}
 				} else {
 					highp float d = float(textureSize(uInput,0)[1]);
 					if (xy.x%2 == 1) {
-						Activation = texelFetch(uInput,xy,0)+cos((uTime+float(xy.y))*Pi*pow(10000.0,-float(xy.x>>1)/d));
+						Activation = texelFetch(uInput,xy,0)+cos((uTime+float(xy.y))*Pi*pow(65536.0,-float(xy.x>>1)/d));
 						// Activation = texelFetch(uInput,xy,0)+vec4(cos((uTime+float(xy.y))*Pi));
 					} else {
-						Activation = texelFetch(uInput,xy,0)+sin((uTime+float(xy.y))*Pi*pow(10000.0,-float(xy.x>>1)/d));
+						Activation = texelFetch(uInput,xy,0)+sin((uTime+float(xy.y))*Pi*pow(65536.0,-float(xy.x>>1)/d));
 						// Activation = texelFetch(uInput,xy,0)+vec4(sin((uTime+float(xy.y))*Pi));
 					}
 				}
@@ -2448,6 +2479,192 @@ var WebML = function(opts){
             this.ValueLayer.finnishBatch(lr);
         }
 	}
+	this.MemoryOptimizedSelfAttentionLayer = function(options) {
+        this.options = options;
+		this.ActivationFunction = 0;
+		this.attentionLayer = new self.AttentionLayer(options);
+        this.QueryLayer = new self.DenseLayer({inputSize:options.inputSize,ActivationFunction:'linear',outputs:options.queryKeyDims});
+        this.KeyLayer = new self.DenseLayer({inputSize:options.inputSize,ActivationFunction:'linear',outputs:options.queryKeyDims});
+        this.ValueLayer = new self.DenseLayer({inputSize:options.inputSize,ActivationFunction:'linear',outputs:options.valueDims});
+		this.outputSize = this.attentionLayer.outputSize;
+		this.ParameterCount = this.QueryLayer.ParameterCount+this.KeyLayer.ParameterCount+this.ValueLayer.ParameterCount;
+		this.Grad = new self.Value([1,1,1]);
+		this.reseted = true;
+		this.concatLayer = new self.ConcatLayer({vertical:true});
+		this.KeyMemory = new self.Value([options.queryKeyDims,1,1]);
+		this.ValueMemory = new self.Value([options.valueDims,1,1]);
+		this.Output = this.attentionLayer.Output;
+		this.State = new self.State([this.Output]);
+		this.Parameters = new self.Parameters([this.QueryLayer.Parameters,this.KeyLayer.Parameters,this.ValueLayer.Parameters],this);
+		this.Gradent = new self.Gradents([this.QueryLayer.Gradent,this.KeyLayer.Gradent,this.ValueLayer.Gradent],this);
+		this.Input = null;
+        this.call = function(Input) {
+			this.Input = Input;
+			var K = this.KeyLayer.call(Input);
+			var V = this.ValueLayer.call(Input);
+			if (this.reseted) {
+				this.KeyMemory.set(K);
+				this.ValueMemory.set(V);
+			} else {
+				this.KeyMemory.set(this.concatLayer.call([K,this.KeyMemory]));
+				this.ValueMemory.set(this.concatLayer.call([V,this.ValueMemory]));
+			}
+			this.reseted = false;
+            return result = this.attentionLayer.call(this.QueryLayer.call(Input),this.KeyMemory,this.ValueMemory);
+        }
+        this.backprop = function(grad,prevAct) {
+			var grads = this.attentionLayer.backprop(grad);
+			grads[0] = this.QueryLayer.backprop(grads[0],prevAct);
+			grads[1] = this.KeyLayer.backprop(grads[1],prevAct);
+			grads[2] = this.ValueLayer.backprop(grads[2],prevAct);
+			this.Grad.size = this.Input.size;
+			this.Grad.clear();
+			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, self.FrameBuffer);
+			self.gl.enable(self.gl.BLEND);
+            self.gl.blendFunc(self.gl.ONE, self.gl.ONE);
+			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.Grad.Texture, 0);
+			self.gl.useProgram(self.Programs.Display);
+			self.gl.activeTexture(self.gl.TEXTURE0);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, grads[0].Texture);
+			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+			self.gl.activeTexture(self.gl.TEXTURE0);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, grads[1].Texture);
+			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+			self.gl.activeTexture(self.gl.TEXTURE0);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, grads[2].Texture);
+			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+			self.gl.disable(self.gl.BLEND);
+            return this.Grad;
+        }
+        this.finnishBatch = function(lr) {
+            this.QueryLayer.finnishBatch(lr);
+            this.KeyLayer.finnishBatch(lr);
+            this.ValueLayer.finnishBatch(lr);
+        }
+		this.reset = function() {
+			this.reseted = true;
+			this.KeyMemory.setSize([this.options.queryKeyDims,1,1]);
+			this.ValueMemory.setSize([this.options.valueDims,1,1]);
+		}
+	}
+	this.MemoryOptimizedMultiHeadedSelfAttentionLayer = function(options) {
+        this.options = options;
+		this.ActivationFunction = 0;
+		this.attentionLayers = [];
+		this.outputSize = [options.heads*options.valueDims,options.inputSize[1]];
+		this.ParameterCount = 0;
+		var p = [];
+		var g = [];
+		for (var i=0; i<options.heads; i++) {
+			this.attentionLayers.push(new self.MemoryOptimizedSelfAttentionLayer(options));
+			this.ParameterCount += this.attentionLayers[i].ParameterCount;
+			p.push(this.attentionLayers[i].Parameters);
+			g.push(this.attentionLayers[i].Gradent);
+		}
+		this.concatLayer = new self.ConcatLayer({});
+		this.Output = this.concatLayer.Output;
+		this.State = new self.State([this.Output]);
+		this.Parameters = new self.Parameters(p,this);
+		this.Gradent = new self.Gradents(g,this);
+		this.Grad = new self.Value([1,1,1]);
+		this.Input = null;
+        this.call = function(Input) {
+			this.Input = Input;
+			var results = [];
+			for (var i=0; i<this.attentionLayers.length; i++) {
+				results.push(this.attentionLayers[i].call(Input));
+			}
+			return this.concatLayer.call(results);
+            // return this.attentionLayer.call(this.QueryLayer.call(Input),this.KeyLayer.call(Input),this.ValueLayer.call(Input));
+        }
+        this.backprop = function(grad,prevAct) {
+			this.Grad.size = this.Input.size;
+			this.Grad.clear();
+			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, self.FrameBuffer);
+			var grads = this.concatLayer.backprop(grad);
+			for (var i=0; i<this.attentionLayers.length; i++) {
+				var g = this.attentionLayers[i].backprop(grads[i],prevAct);
+				// console.log(g.toArrayRed());
+				self.gl.useProgram(self.Programs.Display);
+
+				// self.gl.useProgram(self.Programs.AddWaB);
+				// self.gl.uniform1f(self.uFactor2,1.0/(this.options.heads*this.Input.size[0]*3));
+
+				self.gl.enable(self.gl.BLEND);
+				self.gl.blendFunc(self.gl.ONE, self.gl.ONE);
+				self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.Grad.Texture, 0);
+				self.gl.activeTexture(self.gl.TEXTURE0);
+				self.gl.bindTexture(self.gl.TEXTURE_2D, g.Texture);
+				self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+				self.gl.disable(self.gl.BLEND);
+			}
+			self.gl.disable(self.gl.BLEND);
+            return this.Grad;
+        }
+        this.finnishBatch = function(lr) {
+			for (var i=0; i<this.attentionLayers.length; i++) {
+				this.attentionLayers[i].finnishBatch(lr);
+			}
+        }
+		this.reset = function() {
+			for (var i=0; i<this.attentionLayers.length; i++) {
+				this.attentionLayers[i].reset();
+			}
+		}
+	}
+	this.FullMemoryOptimizedMultiHeadedSelfAttentionLayer = function(options) {
+        this.options = options;
+		this.ActivationFunction = 0;
+		this.attentionLayer = new self.MemoryOptimizedMultiHeadedSelfAttentionLayer(options);
+		this.Dense0 = new self.DenseLayer({inputSize:this.attentionLayer.outputSize,ActivationFunction:'relu',outputs:this.attentionLayer.outputSize[0]});
+		this.Dense1 = new self.DenseLayer({inputSize:this.attentionLayer.outputSize,ActivationFunction:'relu',outputs:this.attentionLayer.outputSize[0]});
+		this.Dense2 = new self.DenseLayer({inputSize:this.attentionLayer.outputSize,ActivationFunction:'linear',outputs:options.inputSize[0]});
+		this.outputSize = this.Dense2.outputSize;
+		this.normLayer = new self.NormalizeLayer({});
+		this.concatLayer = new self.ConcatLayer({vertical:true});
+		this.ParameterCount = this.attentionLayer.ParameterCount+this.Dense0.ParameterCount+this.Dense1.ParameterCount+this.Dense2.ParameterCount;
+		this.Output = this.attentionLayer.Output;
+		this.State = new self.State([this.Output]);
+		this.Parameters = new self.Parameters([this.attentionLayer.Parameters,this.Dense0.Parameters,this.Dense1.Parameters,this.Dense2.Parameters],this);
+		this.Gradent = new self.Gradents([this.Dense0.Gradent,this.Dense1.Gradent,this.Dense2.Gradent],this);
+		this.Input = null;
+        this.call = function(Input) {
+			this.Input = Input;
+			var r = this.Dense2.call(this.Dense1.call(this.Dense0.call(this.attentionLayer.call(Input))));
+			self.gl.useProgram(self.Programs.Display);
+			self.gl.enable(self.gl.BLEND);
+			self.gl.blendFunc(self.gl.ONE, self.gl.ONE);
+			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, r.Texture, 0);
+			self.gl.activeTexture(self.gl.TEXTURE0);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, Input.Texture);
+			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+			self.gl.disable(self.gl.BLEND);
+			var result = this.normLayer.call(r);
+            return result;
+        }
+        this.backprop = function(grad,prevAct) {
+			var g0 = this.normLayer.backprop(grad,"linear");
+			var g1 = this.attentionLayer.backprop(this.Dense0.backprop(this.Dense1.backprop(this.Dense2.backprop(g0,"relu"),"relu"),"linear"),prevAct);
+			self.gl.useProgram(self.Programs.Display);
+			self.gl.enable(self.gl.BLEND);
+			self.gl.blendFunc(self.gl.ONE, self.gl.ONE);
+			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, g1.Texture, 0);
+			self.gl.activeTexture(self.gl.TEXTURE0);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, g0.Texture);
+			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+			self.gl.disable(self.gl.BLEND);
+			return g1;
+        }
+		this.reset = function() {
+			this.attentionLayer.reset();
+		}
+        this.finnishBatch = function(lr) {
+            this.attentionLayer.finnishBatch(lr);
+			this.Dense0.finnishBatch(lr);
+			this.Dense1.finnishBatch(lr);
+			this.Dense2.finnishBatch(lr);
+        }
+	}
 	this.AttentionLayer2 = function(options) {
         this.options = options;
 		this.ActivationFunction = 0;
@@ -2565,6 +2782,60 @@ var WebML = function(opts){
 			}
         }
 	}
+	this.ResidNormReluLayers = function(options) {
+		this.options = options;
+		this.ActivationFunction = 0;
+		this.layers = [];
+		this.ParameterCount = 0;
+		this.normLayer = new self.NormalizeLayer({});
+		for (var i=0; i<options.layers; i++) {
+			var layer = new self.DenseLayer({inputSize:options.inputSize,ActivationFunction:'relu',outputs:options.inputSize[0]});
+			this.layers.push(layer);
+			this.ParameterCount += layer.ParameterCount;
+		}
+		var layer = new self.DenseLayer({inputSize:options.inputSize,ActivationFunction:'linear',outputs:options.inputSize[0]});
+		this.layers.push(layer);
+		this.Output = this.normLayer.Output;
+		this.ParameterCount += layer.ParameterCount;
+		this.State = new self.Parameters(this.layers.map(function(v){return v.State}));
+		this.Parameters = new self.Parameters(this.layers.map(function(v){return v.Parameters}),this);
+		this.call = function(Input) {
+			var result = Input;
+			for (var i=0; i<this.layers.length; i++) {
+				result = this.layers[i].call(result);
+			}
+			self.gl.useProgram(self.Programs.Display);
+			self.gl.enable(self.gl.BLEND);
+			self.gl.blendFunc(self.gl.ONE, self.gl.ONE);
+			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, result.Texture, 0);
+			self.gl.activeTexture(self.gl.TEXTURE0);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, Input.Texture);
+			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+			self.gl.disable(self.gl.BLEND);
+			return this.normLayer.call(result);
+		}
+		this.backprop = function(grad,prevAct) {
+			grad = this.normLayer.backprop(grad,"linear");
+			var g = grad;
+			for (var i=this.layers.length-1; i>=0; i--) {
+				g = this.layers[i].backprop(g,i === 0 ? prevAct : "linear");
+			}
+			self.gl.useProgram(self.Programs.Display);
+			self.gl.enable(self.gl.BLEND);
+			self.gl.blendFunc(self.gl.ONE, self.gl.ONE);
+			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, g.Texture, 0);
+			self.gl.activeTexture(self.gl.TEXTURE0);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, grad.Texture);
+			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+			self.gl.disable(self.gl.BLEND);
+			return g;
+		}
+		this.finnishBatch = function(lr) {
+			for (var i=0; i<this.layers.length; i++) {
+				this.layers[i].finnishBatch(lr);
+			}
+		}
+	}
 	this.FullMultiHeadedAttentionLayer = function(options) {
         this.options = options;
 		this.ActivationFunction = 0;
@@ -2577,9 +2848,6 @@ var WebML = function(opts){
 		this.concatLayer = new self.ConcatLayer({vertical:true});
 		this.ParameterCount = this.attentionLayer.ParameterCount+this.Dense0.ParameterCount+this.Dense1.ParameterCount+this.Dense2.ParameterCount;
 		this.Output = this.attentionLayer.Output;
-		this.StateValue = new self.Value(this.outputSize);
-		this.StateValueTmp = new self.Value(this.outputSize);
-		this.StateValueDropoutOffsets = new self.Value([1,1,1]);
 		this.State = new self.State([this.Output]);
 		this.Parameters = new self.Parameters([this.attentionLayer.Parameters,this.Dense0.Parameters,this.Dense1.Parameters,this.Dense2.Parameters],this);
 		this.Gradent = new self.Gradents([this.Dense0.Gradent,this.Dense1.Gradent,this.Dense2.Gradent],this);
@@ -2609,10 +2877,6 @@ var WebML = function(opts){
 			self.gl.disable(self.gl.BLEND);
 			return g1;
         }
-		this.reset = function() {
-			this.StateValue.setSize([this.StateValue.size[0],1,1]);
-			this.StateValue.clear();
-		}
         this.finnishBatch = function(lr) {
             this.attentionLayer.finnishBatch(lr);
 			this.Dense0.finnishBatch(lr);
@@ -2958,6 +3222,7 @@ var WebML = function(opts){
         this.Inputs = [];
 		this.call = function(Inputs) {
             this.Inputs = Inputs;
+			this.InputSizes = [];
 			if (Inputs.length <= 1) {
 				this.Output.set(Inputs[0]);
 				return this.Output;
@@ -2974,6 +3239,9 @@ var WebML = function(opts){
 				self.gl.activeTexture(self.gl.TEXTURE1);
 				self.gl.bindTexture(self.gl.TEXTURE_2D, Inputs[1].Texture);
 				self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+				this.InputSizes = [Inputs[0].size,Inputs[1].size];
+				Inputs[0].setSize([1,1,1]);
+				Inputs[1].setSize([1,1,1]);
 				for (var i=2; i<Inputs.length; i++) {
 					this.Temp.set(this.Output);
 					hei += Inputs[i].size[1];
@@ -2984,6 +3252,8 @@ var WebML = function(opts){
 					self.gl.activeTexture(self.gl.TEXTURE1);
 					self.gl.bindTexture(self.gl.TEXTURE_2D, Inputs[i].Texture);
 					self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+					this.InputSizes.push(Inputs[i].size);
+					Inputs[i].setSize([1,1,1]);
 				}
 				return this.Output;
 			} else {
@@ -2998,6 +3268,9 @@ var WebML = function(opts){
 				self.gl.activeTexture(self.gl.TEXTURE1);
 				self.gl.bindTexture(self.gl.TEXTURE_2D, Inputs[1].Texture);
 				self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+				this.InputSizes = [Inputs[0].size,Inputs[1].size];
+				Inputs[0].setSize([1,1,1]);
+				Inputs[1].setSize([1,1,1]);
 				for (var i=2; i<Inputs.length; i++) {
 					this.Temp.set(this.Output);
 					wid += Inputs[i].size[0];
@@ -3008,6 +3281,8 @@ var WebML = function(opts){
 					self.gl.activeTexture(self.gl.TEXTURE1);
 					self.gl.bindTexture(self.gl.TEXTURE_2D, Inputs[i].Texture);
 					self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+					this.InputSizes.push(Inputs[i].size);
+					Inputs[i].setSize([1,1,1]);
 				}
 				return this.Output;
 			}
@@ -3023,15 +3298,15 @@ var WebML = function(opts){
 				for (var i=0; i<loop; i++) {
 					if (i < this.Inputs.length) {
 						if (!this.Grads[i]) {
-							this.Grads.push(new self.Value(this.Inputs[i].size));
+							this.Grads.push(new self.Value(this.InputSizes[i]));
 						} else {
-							this.Grads[i].setSize(this.Inputs[i].size);
+							this.Grads[i].setSize(this.InputSizes[i]);
 						}
 						self.gl.uniform1i(self.SplitWidth,hei);
 						self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, self.FrameBuffer);
 						self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.Grads[i].Texture, 0);
 						self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
-						hei += this.Inputs[i].size[1];
+						hei += this.InputSizes[i][1];
 					} else {
 						this.Grads[i].delete();
 					}
@@ -3047,15 +3322,15 @@ var WebML = function(opts){
 				for (var i=0; i<loop; i++) {
 					if (i < this.Inputs.length) {
 						if (!this.Grads[i]) {
-							this.Grads.push(new self.Value(this.Inputs[i].size));
+							this.Grads.push(new self.Value(this.InputSizes[i]));
 						} else {
-							this.Grads[i].setSize(this.Inputs[i].size);
+							this.Grads[i].setSize(this.InputSizes[i]);
 						}
 						self.gl.uniform1i(self.SplitWidth,wid);
 						self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, self.FrameBuffer);
 						self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.Grads[i].Texture, 0);
 						self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
-						wid += this.Inputs[i].size[0];
+						wid += this.InputSizes[i][0];
 					} else {
 						this.Grads[i].delete();
 					}
@@ -3528,8 +3803,8 @@ var WebML = function(opts){
 			return this.Output;
 		}
 		this.backprop = function(grad,prevActFunction) {
-			// this.BatchSizeDiv += this.Input.size[1];
-			this.BatchSizeDiv++;
+			this.BatchSizeDiv += this.Input.size[1];
+			// this.BatchSizeDiv++;
 			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, self.FrameBuffer);
 			self.gl.useProgram(self.Programs.DenseBackpropWaB);
 			self.gl.enable(self.gl.BLEND);
@@ -3838,8 +4113,33 @@ var WebML = function(opts){
                 Layers.push(layer);
 				s.push(layer.State);
                 size = layer.outputSize;
+            } else if (options[i].ResidNormReluLayers) {
+                var layer = new self.ResidNormReluLayers({inputSize:size,layers:options[i].layers,ActivationFunction:act});
+				p.push(layer.Parameters);
+				act = 0;
+				ParameterCount += layer.ParameterCount;
+                Layers.push(layer);
+				s.push(layer.State);
+            } else if (options[i].MemoryOptimizedMultiHeadedSelfAttentionLayer) {
+                var layer = new self.MemoryOptimizedMultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,ActivationFunction:act});
+				p.push(layer.Parameters);
+				g.push(layer.Gradent);
+				act = 0;
+				ParameterCount += layer.ParameterCount;
+                Layers.push(layer);
+				s.push(layer.State);
+                size = layer.outputSize;
+            } else if (options[i].FullMemoryOptimizedMultiHeadedSelfAttentionLayer) {
+                var layer = new self.FullMemoryOptimizedMultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,ActivationFunction:act});
+				p.push(layer.Parameters);
+				g.push(layer.Gradent);
+				act = 0;
+				ParameterCount += layer.ParameterCount;
+                Layers.push(layer);
+				s.push(layer.State);
+                size = layer.outputSize;
             }
-			// MultiHeadedRecurrentAttention
+			// FullMemoryOptimizedMultiHeadedSelfAttentionLayer
 			// recurrency
         }
 		var funct0 = function(Input) {
@@ -3929,24 +4229,30 @@ var WebML = function(opts){
 		var iteration = 0;
 		while (text.length > 0 && iteration < len) {
 			var maxval = 0;
-			var maxidx = 0;
+			var maxidx = -1;
 			for (var i=0; i<self.Tokens.length; i++) {
-				if (self.Tokens[i].length > maxval) {
-					if (text.startsWith(self.Tokens[i])) {
-						maxval = self.Tokens[i].length;
+				var tkn = self.Tokens[i];
+				if (tkn.length > maxval) {
+					if (text.startsWith(tkn)) {
+						maxval = tkn.length;
 						maxidx = i;
 					}
 				}
 			}
 			//result.push(text.slice(0,maxval));
-			text = text.slice(maxval);
-			for (var i=0; i<self.EmbeddingsPerToken; i++) {
-				var id = Math.floor(maxidx/(self.Embeddings.length**i))%self.Embeddings.length;
-				//result.push(self.Embeddings[id]);
-				result.push(id);
-				step++;
+			if (maxidx >= 0) {
+				// console.log(maxval,maxidx,text.slice(0,10));
+				text = text.slice(maxval);
+				for (var i=0; i<self.EmbeddingsPerToken; i++) {
+					var id = Math.floor(maxidx/(self.Embeddings.length**i))%self.Embeddings.length;
+					//result.push(self.Embeddings[id]);
+					result.push(id);
+					step++;
+				}
+				iteration++;
+			} else {
+				text = text.slice(1);
 			}
-			iteration++;
 		}
 		return result;
 	}
