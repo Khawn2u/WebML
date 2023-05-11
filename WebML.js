@@ -894,7 +894,7 @@ var WebML = function(opts){
 				highp int ym = (xy.x+1)&3;
 				highp float val = 0.0;
 				highp int uLayerInputTotal = textureSize(uWaB,0)[0];
-				for (highp int i = 0; i < uLayerInputTotal; i++){
+				for (highp int i = 0; i < uLayerInputTotal; i++) {
 					val += texelFetch(uWaB,ivec2(i,y),0)[ym]*texelFetch(uGrad,ivec2(i,xy.y),0).x;
 				}
 				highp float Act = texelFetch(uAct,xy,0).x;
@@ -1077,6 +1077,7 @@ var WebML = function(opts){
 			uniform highp sampler2D uQ;
 			uniform highp sampler2D uK;
 			uniform highp float uMult;
+			uniform highp float uConstMult;
 			uniform bool uMask;
 			out highp vec4 Activation;
 			void main(){
@@ -1090,7 +1091,9 @@ var WebML = function(opts){
 						val += texelFetch(uQ,ivec2(i,xy.y),0).x*texelFetch(uK,ivec2(i,xy.x),0).x;
 					}
 					// val = exp((val-8.0)*uMult);
-					val = exp(clamp(val*uMult,-25.0,25.0));
+					val -= float(abs((Qweries-xy.y)-(Keys-xy.x)))*uConstMult;
+					// val = exp(clamp(val*uMult,-5.0,5.0));
+					val = exp(clamp(val*uMult,-24.0,24.0));
 					//val = exp(val*uMult/sqrt(float(Keys-xy.x)));
 					Activation = vec4(val);
 				} else {
@@ -1182,7 +1185,7 @@ var WebML = function(opts){
 				Activation = vec4(val*uMult);
 			}
 		`),
-		AttentionBackpropWeightsJacobian: createProgram(`#version 300 es
+		AttentionBackpropWeightsJacobianSumOp: createProgram(`#version 300 es
 			uniform highp sampler2D uGrad;
 			uniform highp sampler2D uWeights;
 			out highp vec4 Activation;
@@ -1191,13 +1194,25 @@ var WebML = function(opts){
 				highp float val = 0.0;
 				highp int Wid = textureSize(uWeights,0)[0];
 				for (highp int i = 0; i < Wid; i++) {
-					if (i == xy.x) {
-						val += texelFetch(uGrad,ivec2(i,xy.y),0).x*(1.0-texelFetch(uWeights,ivec2(i,xy.y),0).x);
-					} else {
-						val -= texelFetch(uGrad,ivec2(i,xy.y),0).x*texelFetch(uWeights,ivec2(i,xy.y),0).x;
-					}
+					// val += texelFetch(uGrad,ivec2(i,xy.y),0).x*(1.0-texelFetch(uWeights,ivec2(i,xy.y),0).x);
+					val -= texelFetch(uGrad,ivec2(i,xy.y),0).x*texelFetch(uWeights,ivec2(i,xy.y),0).x;
 				}
-				val *= texelFetch(uWeights,xy,0).x;
+				Activation = vec4(val);
+			}
+		`),
+		AttentionBackpropWeightsJacobian: createProgram(`#version 300 es
+			uniform highp sampler2D uGrad;
+			uniform highp sampler2D uWeights;
+			uniform highp sampler2D uJacobianSumOp;
+			out highp vec4 Activation;
+			void main(){
+				highp ivec2 xy = ivec2(gl_FragCoord.xy-0.5);
+				highp float val = texelFetch(uJacobianSumOp,ivec2(0,xy.y),0).x;
+				highp float g = texelFetch(uGrad,xy,0).x;
+				highp float w = texelFetch(uWeights,xy,0).x;
+				val += g*w;
+				val += g*(1.0-w);
+				val *= w;
 				Activation = vec4(val);
 			}
 		`),
@@ -1553,6 +1568,14 @@ var WebML = function(opts){
 				}
 			}
         `),
+		SoftMaxExp: createProgram(`#version 300 es
+			uniform highp sampler2D uInput;
+			out highp vec4 Activation;
+			void main() {
+				highp ivec2 xy = ivec2(gl_FragCoord.xy-0.5);
+				Activation = vec4(exp(texelFetch(uInput,xy,0).x));
+			}
+        `),
 	};
 	this.gl.useProgram(this.Programs.IndexStampTimed);
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.IndexStampTimed, "uInput"), 0);
@@ -1692,6 +1715,7 @@ var WebML = function(opts){
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionDotExp, "uK"), 1);
 	this.uMult = this.gl.getUniformLocation(this.Programs.AttentionDotExp, "uMult");
 	this.uMask = this.gl.getUniformLocation(this.Programs.AttentionDotExp, "uMask");
+	this.uConstMult = this.gl.getUniformLocation(this.Programs.AttentionDotExp, "uConstMult");
 	this.gl.useProgram(this.Programs.AttentionSum);
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionSum, "uMat"), 0);
 	this.gl.useProgram(this.Programs.AttentionDivide);
@@ -1712,9 +1736,13 @@ var WebML = function(opts){
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropWeights, "uGrad"), 1);
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropWeights, "uWeights"), 2);
 	this.uMult2 = this.gl.getUniformLocation(this.Programs.AttentionBackpropWeights, "uMult");
+	this.gl.useProgram(this.Programs.AttentionBackpropWeightsJacobianSumOp);
+	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropWeightsJacobianSumOp, "uGrad"), 0);
+	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropWeightsJacobianSumOp, "uWeights"), 1);
 	this.gl.useProgram(this.Programs.AttentionBackpropWeightsJacobian);
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropWeightsJacobian, "uGrad"), 0);
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropWeightsJacobian, "uWeights"), 1);
+	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropWeightsJacobian, "uJacobianSumOp"), 2);
 	this.gl.useProgram(this.Programs.AttentionBackpropQuery);
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropQuery, "uQ"), 0);
 	this.gl.uniform1i(this.gl.getUniformLocation(this.Programs.AttentionBackpropQuery, "uK"), 1);
@@ -2270,6 +2298,7 @@ var WebML = function(opts){
 		this.Sum = new self.Value([1,1,1]);
 		this.Weights = new self.Value([1,1,1]);
 		this.WeightsGrad = new self.Value([1,1,1]);
+		this.WeightsOpGrad = new self.Value([1,1,1]);
 		this.TrueWeightsGrad = new self.Value([1,1,1]);
 		this.ValueGrad = new self.Value([1,1,1]);
 		this.QueryGrad = new self.Value([1,1,1]);
@@ -2291,7 +2320,7 @@ var WebML = function(opts){
 			self.gl.bindTexture(self.gl.TEXTURE_2D, Ktex.Texture);
 			self.gl.useProgram(self.Programs.AttentionDotExp);
 			self.gl.uniform1f(self.uMult,1/Math.sqrt(Qtex.size[0]));
-			// self.gl.uniform1f(self.uMult,1);
+			self.gl.uniform1f(self.uConstMult,this.options.m || 0);
 			self.gl.uniform1i(self.uMask,this.options.mask);
 			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
 			self.gl.useProgram(self.Programs.AttentionSum);
@@ -2323,6 +2352,7 @@ var WebML = function(opts){
 			this.ValueGrad.setSize(this.lastInput[2].size);
             this.KeyGrad.setSize(this.lastInput[1].size);
             this.QueryGrad.setSize(this.lastInput[0].size);
+			this.WeightsOpGrad.setSize([1,this.lastInput[0].size[1],1]);
 			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, self.FrameBuffer);
 			self.gl.useProgram(self.Programs.AttentionBackpropValue);
 			self.gl.uniform1i(self.AttentionBackpropResid,!this.options.noRisid);
@@ -2334,6 +2364,7 @@ var WebML = function(opts){
 			self.gl.activeTexture(self.gl.TEXTURE2);
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.Weights.Texture);
 			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+
 			self.gl.useProgram(self.Programs.AttentionBackpropWeights);
 			self.gl.uniform1f(self.uMult2,1/Math.sqrt(this.lastInput[0].size[0]));
 			// self.gl.uniform1f(self.uMult2,1);
@@ -2345,6 +2376,13 @@ var WebML = function(opts){
 			self.gl.activeTexture(self.gl.TEXTURE2);
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.Weights.Texture);
 			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+
+			self.gl.useProgram(self.Programs.AttentionBackpropWeightsJacobianSumOp);
+			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.WeightsOpGrad.Texture, 0);
+			self.gl.activeTexture(self.gl.TEXTURE0);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, this.WeightsGrad.Texture);
+			self.gl.activeTexture(self.gl.TEXTURE1);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, this.Weights.Texture);
 			
 			self.gl.useProgram(self.Programs.AttentionBackpropWeightsJacobian);
 			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.TrueWeightsGrad.Texture, 0);
@@ -2352,6 +2390,8 @@ var WebML = function(opts){
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.WeightsGrad.Texture);
 			self.gl.activeTexture(self.gl.TEXTURE1);
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.Weights.Texture);
+			self.gl.activeTexture(self.gl.TEXTURE1);
+			self.gl.bindTexture(self.gl.TEXTURE_2D, this.WeightsOpGrad.Texture);
 			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
 			
 			self.gl.useProgram(self.Programs.AttentionBackpropQuery);
@@ -2505,12 +2545,15 @@ var WebML = function(opts){
 			if (this.reseted) {
 				this.KeyMemory.set(K);
 				this.ValueMemory.set(V);
+				this.reseted = false;
+				return result = this.attentionLayer.call(this.QueryLayer.call(Input),K,V);
 			} else {
 				this.KeyMemory.set(this.concatLayer.call([K,this.KeyMemory]));
 				this.ValueMemory.set(this.concatLayer.call([V,this.ValueMemory]));
+				this.reseted = false;
+				return result = this.attentionLayer.call(this.QueryLayer.call(Input),this.KeyMemory,this.ValueMemory);
 			}
-			this.reseted = false;
-            return result = this.attentionLayer.call(this.QueryLayer.call(Input),this.KeyMemory,this.ValueMemory);
+			
         }
         this.backprop = function(grad,prevAct) {
 			var grads = this.attentionLayer.backprop(grad);
@@ -2543,8 +2586,8 @@ var WebML = function(opts){
         }
 		this.reset = function() {
 			this.reseted = true;
-			this.KeyMemory.setSize([this.options.queryKeyDims,1,1]);
-			this.ValueMemory.setSize([this.options.valueDims,1,1]);
+			this.KeyMemory.setSize([1,1,1]);
+			this.ValueMemory.setSize([1,1,1]);
 		}
 	}
 	this.MemoryOptimizedMultiHeadedSelfAttentionLayer = function(options) {
@@ -2623,7 +2666,7 @@ var WebML = function(opts){
 		this.normLayer = new self.NormalizeLayer({});
 		this.concatLayer = new self.ConcatLayer({vertical:true});
 		this.ParameterCount = this.attentionLayer.ParameterCount+this.Dense0.ParameterCount+this.Dense1.ParameterCount+this.Dense2.ParameterCount;
-		this.Output = this.attentionLayer.Output;
+		this.Output = this.Dense2.Output;
 		this.State = new self.State([this.Output]);
 		this.Parameters = new self.Parameters([this.attentionLayer.Parameters,this.Dense0.Parameters,this.Dense1.Parameters,this.Dense2.Parameters],this);
 		this.Gradent = new self.Gradents([this.Dense0.Gradent,this.Dense1.Gradent,this.Dense2.Gradent],this);
@@ -4039,7 +4082,7 @@ var WebML = function(opts){
 				s.push(layer.State);
                 size = layer.outputSize;
             } else if (options[i].SelfAttention) {
-                var layer = new self.SelfAttentionLayer({inputSize:size,depth:options[i].depth,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,ActivationFunction:act});
+                var layer = new self.SelfAttentionLayer({inputSize:size,depth:options[i].depth,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,m:options[i].m,ActivationFunction:act});
 				p.push(layer.Parameters);
 				s.push(layer.State);
 				g.push(layer.Gradent);
@@ -4053,7 +4096,7 @@ var WebML = function(opts){
 				s.push(layer.State);
                 size = layer.outputSize;
             } else if (options[i].FixedAttention) {
-                var layer = new self.FixedAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,ActivationFunction:act});
+                var layer = new self.FixedAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,m:options[i].m,ActivationFunction:act});
 				p.push(layer.Parameters);
 				g.push(layer.Gradent);
 				act = 0;
@@ -4066,7 +4109,7 @@ var WebML = function(opts){
                 Layers.push(layer);
 				s.push(layer.State);
             } else if (options[i].MultiHeadedSelfAttention) {
-                var layer = new self.MultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,ActivationFunction:act});
+                var layer = new self.MultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,m:options[i].m,ActivationFunction:act});
 				p.push(layer.Parameters);
 				g.push(layer.Gradent);
 				act = 0;
@@ -4080,20 +4123,20 @@ var WebML = function(opts){
 				s.push(layer.State);
                 size = layer.outputSize;
             } else if (options[i].FRU) {
-                var layer = new self.FourierRecurrentUnit({inputSize:size,stateOutputs:options[i].stateOutputs,outputs:options[i].outputs,Falloff:options[i].Falloff,ActivationFunction:act});
+                var layer = new self.FourierRecurrentUnit({inputSize:size,stateOutputs:options[i].stateOutputs,outputs:options[i].outputs,Falloff:options[i].Falloff,m:options[i].m,ActivationFunction:act});
 				p.push(layer.Parameters);
                 Layers.push(layer);
 				s.push(layer.State);
                 size = layer.outputSize;
 			} else if (options[i].SimpleRecurrentAttention) {
-                var layer = new self.SimpleRecurrentAttention({inputSize:size,queryKeyDims:options[i].outputs,valueDims:options[i].outputs,noRisid:options[i].noRisid,ActivationFunction:act});
+                var layer = new self.SimpleRecurrentAttention({inputSize:size,queryKeyDims:options[i].outputs,valueDims:options[i].outputs,noRisid:options[i].noRisid,m:options[i].m,ActivationFunction:act});
                 Layers.push(layer);
 				ParameterCount += layer.ParameterCount;
 				p.push(layer.Parameters);
 				s.push(layer.State);
                 size = layer.outputSize;
             } else if (options[i].MultiHeadedRecurrentAttention) {
-                var layer = new self.MultiHeadedRecurrentAttention({inputSize:size,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,recurrency:options[i].recurrency,heads:options[i].heads,noRisid:options[i].noRisid,ActivationFunction:act});
+                var layer = new self.MultiHeadedRecurrentAttention({inputSize:size,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,recurrency:options[i].recurrency,heads:options[i].heads,noRisid:options[i].noRisid,m:options[i].m,ActivationFunction:act});
                 Layers.push(layer);
 				ParameterCount += layer.ParameterCount;
 				p.push(layer.Parameters);
@@ -4105,7 +4148,7 @@ var WebML = function(opts){
 				s.push(layer.State);
                 size = layer.outputSize;
             } else if (options[i].FullMultiHeadedSelfAttention) {
-                var layer = new self.FullMultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,ActivationFunction:act});
+                var layer = new self.FullMultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,m:options[i].m,ActivationFunction:act});
 				p.push(layer.Parameters);
 				g.push(layer.Gradent);
 				act = 0;
@@ -4121,7 +4164,7 @@ var WebML = function(opts){
                 Layers.push(layer);
 				s.push(layer.State);
             } else if (options[i].MemoryOptimizedMultiHeadedSelfAttentionLayer) {
-                var layer = new self.MemoryOptimizedMultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,ActivationFunction:act});
+                var layer = new self.MemoryOptimizedMultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,m:options[i].m,ActivationFunction:act});
 				p.push(layer.Parameters);
 				g.push(layer.Gradent);
 				act = 0;
@@ -4130,7 +4173,7 @@ var WebML = function(opts){
 				s.push(layer.State);
                 size = layer.outputSize;
             } else if (options[i].FullMemoryOptimizedMultiHeadedSelfAttentionLayer) {
-                var layer = new self.FullMemoryOptimizedMultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,ActivationFunction:act});
+                var layer = new self.FullMemoryOptimizedMultiHeadedSelfAttentionLayer({inputSize:size,heads:options[i].heads,queryKeyDims:options[i].queryKeyDims,valueDims:options[i].valueDims,mask:options[i].mask,noRisid:options[i].noRisid,m:options[i].m,ActivationFunction:act});
 				p.push(layer.Parameters);
 				g.push(layer.Gradent);
 				act = 0;
@@ -4212,11 +4255,12 @@ var WebML = function(opts){
 	this.initalizeTokensAndEmbeddings = function(tokens,embeddingsPerToken) {
 		self.Tokens = tokens;
 		self.EmbeddingsPerToken = embeddingsPerToken;
-		var EmbeddingCount = Math.ceil(self.Tokens.length**(1/embeddingsPerToken));
+		var EmbeddingCount = Math.ceil(self.Tokens.length**(1/embeddingsPerToken))+1;
 		self.Embeddings = new Array(EmbeddingCount);
 		for (var i=0; i<EmbeddingCount; i++) {
 			self.Embeddings[i] = self.randomEmbedding();
 		}
+		this.NullToken = self.Embeddings[0];
 		return EmbeddingCount;
 	}
 	this.textToIndexs = function(text,len) {
@@ -4260,7 +4304,7 @@ var WebML = function(opts){
 		var indexs = self.textToIndexs(text,len);
 		var result = [];
 		for (var i=0; i<indexs.length; i++) {
-			result.push(self.Embeddings[indexs[i]]);
+			result.push(self.Embeddings[indexs[i]+1]);
 		}
 		return result;
 	}
@@ -4271,6 +4315,14 @@ var WebML = function(opts){
 			result.set(item[j],j*self.WordEmbedingDims);
 		}
 		return result;
+	}
+	this.textToData = function(text,len) {
+		var indexs = self.textToIndexs(text,len);
+		var result = [];
+		for (var i=0; i<indexs.length; i++) {
+			result.push(self.Embeddings[indexs[i]+1]);
+		}
+		return {indexs:indexs,embeddings:result};
 	}
 	this.embeddingToIndex = function(embedding) {
 		var maxidx = 0;
