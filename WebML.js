@@ -73,7 +73,7 @@ var WebML = function(opts){
 	}
     void main(){
         o_color = vec4(texelFetch(u_image, ivec2(gl_FragCoord.xy-0.5), 0).xyz*uMult,1.0);
-		//o_color = vec4(sigmoid(texelFetch(u_image, ivec2(gl_FragCoord.xy-0.5), 0).xyz*uMult),1.0);
+		// o_color = vec4(sigmoid(texelFetch(u_image, ivec2(gl_FragCoord.xy-0.5), 0).xyz*uMult),1.0);
     }`);
 	var drawPgrmuMult = this.gl.getUniformLocation(drawPgrm,"uMult");
     this.drawTexture = function(tex,res) {
@@ -280,8 +280,10 @@ var WebML = function(opts){
 				self.gl.copyTexImage2D(self.gl.TEXTURE_2D,0,self.RGBAF,0,0,this.size[0],this.size[1],0);
 			} else if (data.constructor == String) {
 				var arr = self.textToFlattenedArray(data);
-				this.setSize([self.WordEmbedingDims,Math.floor(arr.length/this.WordEmbedingDims),1]);
-				this.set(arr,1);
+				var arr2 = new Float32Array(arr.length+self.WordEmbedingDims);
+				arr2.set(arr,self.WordEmbedingDims);
+				this.setSize([self.WordEmbedingDims,Math.floor(arr2.length/self.WordEmbedingDims),1]);
+				this.set(arr2,1);
 			} else {
 				self.gl.bindTexture(self.gl.TEXTURE_2D, this.Texture);
 				self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.RGBAF, self.gl.RGBA, self.FLOAT, data);
@@ -1195,7 +1197,7 @@ var WebML = function(opts){
 				highp int Wid = textureSize(uWeights,0)[0];
 				for (highp int i = 0; i < Wid; i++) {
 					// val += texelFetch(uGrad,ivec2(i,xy.y),0).x*(1.0-texelFetch(uWeights,ivec2(i,xy.y),0).x);
-					val -= texelFetch(uGrad,ivec2(i,xy.y),0).x*texelFetch(uWeights,ivec2(i,xy.y),0).x;
+					val += texelFetch(uGrad,ivec2(i,xy.y),0).x*texelFetch(uWeights,ivec2(i,xy.y),0).x;
 				}
 				Activation = vec4(val);
 			}
@@ -1207,7 +1209,7 @@ var WebML = function(opts){
 			out highp vec4 Activation;
 			void main(){
 				highp ivec2 xy = ivec2(gl_FragCoord.xy-0.5);
-				highp float val = texelFetch(uJacobianSumOp,ivec2(0,xy.y),0).x;
+				highp float val = -texelFetch(uJacobianSumOp,ivec2(0,xy.y),0).x;
 				highp float g = texelFetch(uGrad,xy,0).x;
 				highp float w = texelFetch(uWeights,xy,0).x;
 				val += g*w;
@@ -2356,14 +2358,14 @@ var WebML = function(opts){
 			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, self.FrameBuffer);
 			self.gl.useProgram(self.Programs.AttentionBackpropValue);
 			self.gl.uniform1i(self.AttentionBackpropResid,!this.options.noRisid);
-			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.ValueGrad.Texture, 0);
-			self.gl.activeTexture(self.gl.TEXTURE0);
-			self.gl.bindTexture(self.gl.TEXTURE_2D, this.lastInput[2].Texture);
-			self.gl.activeTexture(self.gl.TEXTURE1);
-			self.gl.bindTexture(self.gl.TEXTURE_2D, inputGraident.Texture);
-			self.gl.activeTexture(self.gl.TEXTURE2);
-			self.gl.bindTexture(self.gl.TEXTURE_2D, this.Weights.Texture);
-			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
+			// self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.ValueGrad.Texture, 0);
+			// self.gl.activeTexture(self.gl.TEXTURE0);
+			// self.gl.bindTexture(self.gl.TEXTURE_2D, this.lastInput[2].Texture);
+			// self.gl.activeTexture(self.gl.TEXTURE1);
+			// self.gl.bindTexture(self.gl.TEXTURE_2D, inputGraident.Texture);
+			// self.gl.activeTexture(self.gl.TEXTURE2);
+			// self.gl.bindTexture(self.gl.TEXTURE_2D, this.Weights.Texture);
+			// self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
 
 			self.gl.useProgram(self.Programs.AttentionBackpropWeights);
 			self.gl.uniform1f(self.uMult2,1/Math.sqrt(this.lastInput[0].size[0]));
@@ -2383,6 +2385,7 @@ var WebML = function(opts){
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.WeightsGrad.Texture);
 			self.gl.activeTexture(self.gl.TEXTURE1);
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.Weights.Texture);
+			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
 			
 			self.gl.useProgram(self.Programs.AttentionBackpropWeightsJacobian);
 			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.TrueWeightsGrad.Texture, 0);
@@ -2390,7 +2393,7 @@ var WebML = function(opts){
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.WeightsGrad.Texture);
 			self.gl.activeTexture(self.gl.TEXTURE1);
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.Weights.Texture);
-			self.gl.activeTexture(self.gl.TEXTURE1);
+			self.gl.activeTexture(self.gl.TEXTURE2);
 			self.gl.bindTexture(self.gl.TEXTURE_2D, this.WeightsOpGrad.Texture);
 			self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
 			
@@ -2542,16 +2545,17 @@ var WebML = function(opts){
 			this.Input = Input;
 			var K = this.KeyLayer.call(Input);
 			var V = this.ValueLayer.call(Input);
+			return this.attentionLayer.call(this.QueryLayer.call(Input),K,V);
 			if (this.reseted) {
 				this.KeyMemory.set(K);
 				this.ValueMemory.set(V);
 				this.reseted = false;
-				return result = this.attentionLayer.call(this.QueryLayer.call(Input),K,V);
+				return this.attentionLayer.call(this.QueryLayer.call(Input),K,V);
 			} else {
 				this.KeyMemory.set(this.concatLayer.call([K,this.KeyMemory]));
 				this.ValueMemory.set(this.concatLayer.call([V,this.ValueMemory]));
 				this.reseted = false;
-				return result = this.attentionLayer.call(this.QueryLayer.call(Input),this.KeyMemory,this.ValueMemory);
+				return this.attentionLayer.call(this.QueryLayer.call(Input),this.KeyMemory,this.ValueMemory);
 			}
 			
         }
@@ -2627,12 +2631,7 @@ var WebML = function(opts){
 			var grads = this.concatLayer.backprop(grad);
 			for (var i=0; i<this.attentionLayers.length; i++) {
 				var g = this.attentionLayers[i].backprop(grads[i],prevAct);
-				// console.log(g.toArrayRed());
 				self.gl.useProgram(self.Programs.Display);
-
-				// self.gl.useProgram(self.Programs.AddWaB);
-				// self.gl.uniform1f(self.uFactor2,1.0/(this.options.heads*this.Input.size[0]*3));
-
 				self.gl.enable(self.gl.BLEND);
 				self.gl.blendFunc(self.gl.ONE, self.gl.ONE);
 				self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.Grad.Texture, 0);
@@ -2641,7 +2640,6 @@ var WebML = function(opts){
 				self.gl.drawElements(self.gl.TRIANGLES, 6, self.gl.UNSIGNED_SHORT, 0);
 				self.gl.disable(self.gl.BLEND);
 			}
-			self.gl.disable(self.gl.BLEND);
             return this.Grad;
         }
         this.finnishBatch = function(lr) {
@@ -3336,6 +3334,12 @@ var WebML = function(opts){
 				self.gl.uniform1i(self.SplitVertical,true);
 				self.gl.activeTexture(self.gl.TEXTURE0);
 				self.gl.bindTexture(self.gl.TEXTURE_2D, grad.Texture);
+				self.gl.activeTexture(self.gl.TEXTURE1);
+				self.gl.bindTexture(self.gl.TEXTURE_2D, null);
+				self.gl.activeTexture(self.gl.TEXTURE2);
+				self.gl.bindTexture(self.gl.TEXTURE_2D, null);
+				self.gl.activeTexture(self.gl.TEXTURE3);
+				self.gl.bindTexture(self.gl.TEXTURE_2D, null);
 				var hei = 0;
 				var loop = Math.max(this.Inputs.length,this.Grads.length);
 				for (var i=0; i<loop; i++) {
@@ -3360,6 +3364,12 @@ var WebML = function(opts){
 				self.gl.uniform1i(self.SplitVertical,false);
 				self.gl.activeTexture(self.gl.TEXTURE0);
 				self.gl.bindTexture(self.gl.TEXTURE_2D, grad.Texture);
+				self.gl.activeTexture(self.gl.TEXTURE1);
+				self.gl.bindTexture(self.gl.TEXTURE_2D, null);
+				self.gl.activeTexture(self.gl.TEXTURE2);
+				self.gl.bindTexture(self.gl.TEXTURE_2D, null);
+				self.gl.activeTexture(self.gl.TEXTURE3);
+				self.gl.bindTexture(self.gl.TEXTURE_2D, null);
 				var wid = 0;
 				var loop = Math.max(this.Inputs.length,this.Grads.length);
 				for (var i=0; i<loop; i++) {
