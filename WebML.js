@@ -281,6 +281,7 @@ var WebML = function(opts){
 			} else if (data.constructor == String) {
 				var arr = self.textToFlattenedArray(data);
 				var arr2 = new Float32Array(arr.length+self.WordEmbedingDims);
+				arr2.set(self.Embeddings[0],0);
 				arr2.set(arr,self.WordEmbedingDims);
 				this.setSize([self.WordEmbedingDims,Math.floor(arr2.length/self.WordEmbedingDims),1]);
 				this.set(arr2,1);
@@ -4270,7 +4271,7 @@ var WebML = function(opts){
 		for (var i=0; i<EmbeddingCount; i++) {
 			self.Embeddings[i] = self.randomEmbedding();
 		}
-		this.NullToken = self.Embeddings[0];
+		self.NullToken = self.Embeddings[0];
 		return EmbeddingCount;
 	}
 	this.textToIndexs = function(text,len) {
@@ -4298,7 +4299,7 @@ var WebML = function(opts){
 				// console.log(maxval,maxidx,text.slice(0,10));
 				text = text.slice(maxval);
 				for (var i=0; i<self.EmbeddingsPerToken; i++) {
-					var id = Math.floor(maxidx/(self.Embeddings.length**i))%self.Embeddings.length;
+					var id = (Math.floor(maxidx/((self.Embeddings.length-1)**i))%(self.Embeddings.length-1))+1;
 					//result.push(self.Embeddings[id]);
 					result.push(id);
 					step++;
@@ -4314,7 +4315,7 @@ var WebML = function(opts){
 		var indexs = self.textToIndexs(text,len);
 		var result = [];
 		for (var i=0; i<indexs.length; i++) {
-			result.push(self.Embeddings[indexs[i]+1]);
+			result.push(self.Embeddings[indexs[i]]);
 		}
 		return result;
 	}
@@ -4330,16 +4331,16 @@ var WebML = function(opts){
 		var indexs = self.textToIndexs(text,len);
 		var result = [];
 		for (var i=0; i<indexs.length; i++) {
-			result.push(self.Embeddings[indexs[i]+1]);
+			result.push(self.Embeddings[indexs[i]]);
 		}
 		return {indexs:indexs,embeddings:result};
 	}
 	this.embeddingToIndex = function(embedding) {
 		var maxidx = 0;
 		var maxval = -Infinity;
-		for (var i=0; i<self.Embeddings.length; i++) {
+		for (var i=1; i<self.Embeddings.length; i++) {
 			var v = 0;
-			for (var j=0; j<self.Embeddings[i].length; j++) {
+			for (var j=0; j<self.Embeddings[i].length && v <= maxval; j++) {
 				v += embedding[j]*self.Embeddings[i][j];
 			}
 			if (v > maxval) {
@@ -4349,6 +4350,36 @@ var WebML = function(opts){
 		}
 		return maxidx;
 	}
+	this.roundEmbedding = function(embedding) {
+		var maxidx = -1;
+		var maxval = -Infinity;
+		for (var i=1; i<self.Embeddings.length; i++) {
+			var v = 0;
+			for (var j=0; j<self.Embeddings[i].length; j++) {
+				v += embedding[j]*self.Embeddings[i][j];
+			}
+			if (v > maxval) {
+				maxidx = i;
+				maxval = v;
+			}
+		}
+		return self.Embeddings[maxidx];
+	}
+	this.roundEmbeddingData = function(embedding) {
+		var maxidx = -1;
+		var maxval = -Infinity;
+		for (var i=1; i<self.Embeddings.length; i++) {
+			var v = 0;
+			for (var j=0; j<self.Embeddings[i].length; j++) {
+				v += embedding[j]*self.Embeddings[i][j];
+			}
+			if (v > maxval) {
+				maxidx = i;
+				maxval = v;
+			}
+		}
+		return {Embedding:self.Embeddings[maxidx],Index:maxidx,MaxDot:maxval};
+	}
 	this.arrayToIndexs = function(arr) {
 		var indexs = [];
 		for (var j=0; j<arr.length; j++) {
@@ -4357,7 +4388,9 @@ var WebML = function(opts){
 		return indexs;
 	}
 	this.arrayToText = function(arr) {
-		var indexs = self.arrayToIndexs(arr);
+		return self.indexsToText(self.arrayToIndexs(arr));
+	}
+	this.indexsToText = function(indexs) {
 		var idx = 0;
 		var newindexs = [];
 		var maxsubidx = self.EmbeddingsPerToken-1;
@@ -4365,9 +4398,9 @@ var WebML = function(opts){
 			// Math.floor(maxidx/(self.Embeddings.length**i))%self.Embeddings.length
 			var subidx = i%self.EmbeddingsPerToken;
 			if (subidx === 0) {
-				idx = indexs[i];
+				idx = indexs[i]-1;
 			} else {
-				idx += indexs[i]*(self.Embeddings.length**subidx);
+				idx += (indexs[i]-1)*((self.Embeddings.length-1)**subidx);
 			}
 			if (subidx === maxsubidx) {
 				newindexs.push(idx);
